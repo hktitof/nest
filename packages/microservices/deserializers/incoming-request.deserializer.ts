@@ -23,10 +23,17 @@ export class IncomingRequestDeserializer implements ConsumerDeserializer {
     if (!value) {
       return true;
     }
-    if (
-      !isUndefined((value as IncomingRequest).pattern) ||
-      !isUndefined((value as IncomingRequest).data)
-    ) {
+    // IncomingRequest = ReadPacket & PacketId. A native packet either
+    // carries a pattern (every Nest client emits one) or routes by
+    // channel with both `id` and `data` on the wire. Record builders
+    // (Nats/Mqtt/Rmq) may omit data, and custom serializers may skip
+    // the pattern key, so anything else is treated as a foreign payload
+    // (see nestjs/nest#17669 for the response-side twin).
+    const hasPattern = !isUndefined((value as IncomingRequest).pattern);
+    const looksLikeRequest =
+      !isUndefined((value as IncomingRequest).id) &&
+      !isUndefined((value as IncomingRequest).data);
+    if (hasPattern || looksLikeRequest) {
       return false;
     }
     return true;

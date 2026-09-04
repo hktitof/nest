@@ -167,7 +167,11 @@ describe('ServerRedis', () => {
       );
 
       await server.handleMessage(channel, JSON.stringify({}), null, channel);
-      expect(handleEventSpy).toHaveBeenCalled();
+      expect(handleEventSpy).toHaveBeenCalledWith(
+        channel,
+        { pattern: channel, data: { data } },
+        expect.any(RedisContext),
+      );
     });
     it(`should publish NO_MESSAGE_HANDLER if pattern not exists in messageHandlers object`, async () => {
       vi.spyOn(server, 'parseMessage').mockImplementation(

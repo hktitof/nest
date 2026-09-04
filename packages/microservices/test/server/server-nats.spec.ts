@@ -1,6 +1,8 @@
 import { NO_MESSAGE_HANDLER } from '../../constants.js';
 import { BaseRpcContext } from '../../ctx-host/base-rpc.context.js';
 import { NatsContext } from '../../ctx-host/index.js';
+import { NatsRecordBuilder } from '../../record-builders/index.js';
+import { NatsRecordSerializer } from '../../serializers/nats-record.serializer.js';
 import { ServerNats } from '../../server/server-nats.js';
 import { objectToMap } from './utils/object-to-map.js';
 
@@ -238,6 +240,41 @@ describe('ServerNats', () => {
       };
       await server.handleMessage(channel, natsMsg);
       expect(handler).toHaveBeenCalledWith('test', natsContext);
+    });
+    it(`should reply to a headers-only NatsRecord request (records may omit data)`, async () => {
+      const handler = vi.fn().mockResolvedValue('ok');
+      untypedServer.messageHandlers = objectToMap({
+        [channel]: handler,
+      });
+
+      // what a Nest client puts on the wire for send('test', new
+      // NatsRecordBuilder().setHeaders({...}).build()) -- JSON.stringify
+      // drops the undefined data key, so the packet has no data field
+      const record = new NatsRecordBuilder()
+        .setHeaders({ 'x-version': '2' })
+        .build();
+      const wirePacket = new NatsRecordSerializer().serialize({
+        pattern: channel,
+        data: record,
+        id,
+      } as any);
+      const natsMsg: NatsMsg = {
+        data: wirePacket.data,
+        subject: channel,
+        sid: +id,
+        reply: 'inbox',
+        respond: vi.fn(),
+        headers: wirePacket.headers,
+        json: () => JSON.parse(wirePacket.data),
+      };
+
+      await server.handleMessage(channel, natsMsg);
+      expect(handler).toHaveBeenCalledWith(undefined, expect.any(NatsContext));
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(getPublisherSpy).toHaveBeenCalledTimes(1);
+      expect(getPublisherSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ response: 'ok' }),
+      );
     });
   });
   describe('getPublisher', () => {

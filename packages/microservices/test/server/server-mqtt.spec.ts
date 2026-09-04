@@ -1,6 +1,8 @@
 import { NO_MESSAGE_HANDLER } from '../../constants.js';
 import { BaseRpcContext } from '../../ctx-host/base-rpc.context.js';
 import { MqttContext } from '../../ctx-host/index.js';
+import { MqttRecordBuilder } from '../../record-builders/index.js';
+import { MqttRecordSerializer } from '../../serializers/mqtt-record.serializer.js';
 import { ServerMqtt } from '../../server/server-mqtt.js';
 import { objectToMap } from './utils/object-to-map.js';
 
@@ -252,6 +254,30 @@ describe('ServerMqtt', () => {
         null,
       );
       expect(handler).toHaveBeenCalledWith(data, expect.any(MqttContext));
+    });
+    it(`should reply to an options-only MqttRecord request (records may omit data)`, async () => {
+      const handler = vi.fn().mockResolvedValue('ok');
+      untypedServer.messageHandlers = objectToMap({
+        [channel]: handler,
+      });
+
+      // what a Nest client puts on the wire for send('test', new
+      // MqttRecordBuilder().setQoS(1).build()) -- JSON.stringify drops
+      // the undefined data key, so the packet has no data field
+      const record = new MqttRecordBuilder().setQoS(1).build();
+      const wirePacket = new MqttRecordSerializer().serialize({
+        pattern: channel,
+        data: record,
+        id,
+      } as any);
+
+      await server.handleMessage(channel, Buffer.from(wirePacket), null);
+      expect(handler).toHaveBeenCalledWith(undefined, expect.any(MqttContext));
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(getPublisherSpy).toHaveBeenCalledTimes(1);
+      expect(getPublisherSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ response: 'ok' }),
+      );
     });
   });
   describe('getPublisher', () => {
